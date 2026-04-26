@@ -1,0 +1,46 @@
+# Documentação do Projeto: Roleta Presidente
+
+## Visão Geral
+O Roleta Presidente é um webapp interativo desenvolvido para comunidades de League of Legends. O objetivo é criar partidas personalizadas onde um "Presidente" é sorteado para definir modificadores globais, enquanto cada jogador recebe um desafio individual (campeão, build, KDA ou eventos) através de uma roleta.
+
+## Funcionalidades e Fluxo de Jogo
+
+### 1. Gestão de Salas
+- **Criação:** Usuários criam salas com códigos únicos de 5 caracteres.
+- **Participantes:** Suporta até 10 jogadores. O criador tem o poder de iniciar as fases do jogo.
+- **Bloqueio:** Após o início do sorteio do Presidente, a sala é bloqueada para novos integrantes para garantir a integridade da rodada.
+
+### 2. Dinâmica de Sorteio do Presidente
+- **Suspense Garantido:** O ID do Presidente só é revelado na barra lateral após o término da animação da roleta.
+- **Evento Especial "Dobra ou Arrega" (20% de chance):**
+    - Se ativado, o Presidente deve escolher entre **Dobrar** ou **Arregar**.
+    - **Dobrar:** Ativa a "Rodada em Dobro" (Sorteio de 2 modificadores simultâneos). A partida atual e a próxima valem o dobro de pontos. O jogador recebe a tag "Aí tem coragem".
+    - **Arregar:** Partida segue normal com apenas 1 modificador. O jogador recebe a tag "arregão".
+- **Ações do Presidente:** Caso o evento não ocorra, o Presidente segue diretamente para o sorteio do Modificador (apenas 1). *Nota: A função de solicitar rodada dupla manual foi removida para valorizar o evento especial.*
+
+### 3. Modificadores de Partida (Mods)
+O app conta com mais de 30 modificadores temáticos (Tsunami de Skin, Invasão do Vazio, etc.).
+- **Sorteio Duplo:** Quando a "Rodada em Dobro" está ativa, a roleta seleciona **dois modificadores** aleatórios.
+- **Visualização:** Os modificadores são exibidos em destaque (lado a lado se forem dois) por 7 segundos para todos os players.
+- **Exibição Persistente:** Durante a partida, os nomes, imagens e descrições de todos os mods ativos ficam visíveis no centro da tela.
+
+### 4. Desafios Individuais (Rodada dos Jogadores)
+Cada jogador define seu objetivo na partida:
+- **Personagem:** Sorteia um entre os 168 campeões do LoL.
+    - Opcional: Adicionar **Build** (+2 pts) e **Lane** (+2 pts) aleatórias.
+- **Evento:** Sorteia de 1 a 5 objetivos (ex: Double Kill, Roubo de Dragão).
+- **KDA:** Meta de Kills e Mortes baseada em dificuldade.
+
+### 5. Sistema de Pontuação e Verificação
+- **Auto-Verificação:** Após a partida, os jogadores confirmam se cumpriram o desafio.
+- **Cálculo:** Sucesso garante a pontuação total; falha subtrai metade do valor.
+- **Dobra de Pontos:** Se a rodada for "em dobro", todos os ganhos e perdas de pontos são multiplicados por 2.
+
+## Conteúdo do Banco de Dados
+- **Builds:** 22 opções estratégicas.
+- **Campeões:** 168 campeões com integração de imagens oficiais.
+- **Cenários/Mods:** Lista expandida com mais de 30 condições especiais de jogo.
+
+## Tecnologias Utilizadas
+- **Backend:** Node.js (Express + Socket.io).
+- **Frontend:** React (Vite), Tailwind CSS, Framer Motion.
