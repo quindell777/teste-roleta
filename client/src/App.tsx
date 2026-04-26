@@ -87,9 +87,16 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Conectar ao backend (Render em prod, localhost em dev)
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-    socket = io(backendUrl);
+    // Detecção automática de ambiente
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const backendUrl = isLocalhost 
+      ? 'http://localhost:3001' 
+      : 'https://teste-roleta.onrender.com';
+
+    socket = io(backendUrl, {
+      transports: ['websocket', 'polling'], // Forçar websocket com fallback
+      withCredentials: true
+    });
 
     socket.on('room_created', (id) => {
       setRoomId(id);
