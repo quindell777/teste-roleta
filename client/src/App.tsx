@@ -87,8 +87,9 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Conectar ao servidor na porta 3001
-    socket = io('http://localhost:3001');
+    // Conectar ao backend (Render em prod, localhost em dev)
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+    socket = io(backendUrl);
 
     socket.on('room_created', (id) => {
       setRoomId(id);
