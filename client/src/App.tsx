@@ -56,7 +56,15 @@ interface RoomState {
 }
 
 export default function App() {
-  const [roomId, setRoomId] = useState<string | null>(null);
+  const [roomId, setRoomId] = useState<string | null>(() => localStorage.getItem('roleta_room_id'));
+  const [playerId] = useState<string>(() => {
+    let id = localStorage.getItem('roleta_player_id');
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem('roleta_player_id', id);
+    }
+    return id;
+  });
   const [playerName, setPlayerName] = useState('');
   const [playerImage, setPlayerImage] = useState('');
   const [joinRoomId, setJoinRoomId] = useState('');
@@ -76,6 +84,11 @@ export default function App() {
 
   useEffect(() => {
     roomRef.current = room;
+    if (room?.roomId) {
+      localStorage.setItem('roleta_room_id', room.roomId);
+    } else {
+      localStorage.removeItem('roleta_room_id');
+    }
   }, [room]);
 
   const submitChoice = () => {
@@ -98,8 +111,19 @@ export default function App() {
       withCredentials: true
     });
 
+    socket.on('connect', () => {
+      console.log('Connected to server with socket ID:', socket.id);
+      socket.emit('register_player', { playerId });
+      
+      const savedRoomId = localStorage.getItem('roleta_room_id');
+      if (savedRoomId) {
+        socket.emit('rejoin_room', { roomId: savedRoomId, playerId });
+      }
+    });
+
     socket.on('room_created', (id) => {
       setRoomId(id);
+      localStorage.setItem('roleta_room_id', id);
     });
 
     socket.on('room_update', (newRoomState: RoomState) => {
@@ -170,7 +194,7 @@ export default function App() {
   useEffect(() => {
     let interval: any;
 
-    const amICreator = room && socket && room.creatorId === socket.id;
+    const amICreator = room && socket && room.creatorId === playerId;
     const shouldPing = room && amICreator && (room.status === 'playing' || room.status === 'players_round');
 
     if (shouldPing) {
@@ -185,16 +209,16 @@ export default function App() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [room?.status, room?.creatorId, room?.roomId]);
+  }, [room?.status, room?.creatorId, room?.roomId, playerId]);
 
   const createRoom = () => {
     if (!playerName.trim()) return setError('Digite seu nome');
-    socket.emit('create_room', { playerName, playerImage });
+    socket.emit('create_room', { playerName, playerImage, playerId });
   };
 
   const joinRoom = () => {
     if (!playerName.trim() || !joinRoomId.trim()) return setError('Preencha os campos');
-    socket.emit('join_room', { roomId: joinRoomId.toUpperCase(), playerName, playerImage });
+    socket.emit('join_room', { roomId: joinRoomId.toUpperCase(), playerName, playerImage, playerId });
   };
 
   if (!roomId || !room) {
@@ -264,10 +288,10 @@ export default function App() {
   }
 
   // === ROOM ACTIONS ===
-  const amICreator = room.creatorId === socket.id;
-  const amIPresident = room.presidentId === socket.id;
+  const amICreator = room.creatorId === playerId;
+  const amIPresident = room.presidentId === playerId;
   const presidentPlayer = room.players.find(p => p.id === room.presidentId);
-  const myPlayer = room.players.find(p => p.id === socket.id);
+  const myPlayer = room.players.find(p => p.id === playerId);
 
   const renderContent = () => {
     if (isSpinning) {
@@ -696,7 +720,7 @@ export default function App() {
               <h2 className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold">Participantes ({room.players.length}/10)</h2>
               <div className="flex flex-wrap gap-2">
                 {room.players.map((p) => (
-                  <div key={p.id} className={cn("text-[10px] px-2 py-1 flex items-center gap-1 border", p.id === socket.id ? "bg-cyan-500/20 border-cyan-500/40 text-slate-100" : "border-slate-800 bg-slate-800/30 text-slate-300", room.presidentId === p.id && "ring-1 ring-cyan-500")}>
+                  <div key={p.id} className={cn("text-[10px] px-2 py-1 flex items-center gap-1 border", p.id === playerId ? "bg-cyan-500/20 border-cyan-500/40 text-slate-100" : "border-slate-800 bg-slate-800/30 text-slate-300", room.presidentId === p.id && "ring-1 ring-cyan-500")}>
                     <img src={p.imageUrl} className="w-3 h-3 rounded-full object-cover mr-1" alt="" />
                     {p.name} ({p.totalPoints || 0})
                     {p.id === room.creatorId && <Crown className="w-3 h-3 ml-1 text-yellow-500" />}
@@ -714,7 +738,7 @@ export default function App() {
             <h2 className="text-xs uppercase tracking-[0.2em] text-slate-500 font-bold mb-4">Participantes ({room.players.length}/10)</h2>
             <ul className="space-y-3">
               {room.players.map((p) => (
-                <li key={p.id} className={cn("flex items-center justify-between p-2", p.id === socket.id ? "border border-cyan-500/30 bg-cyan-500/5" : "border border-slate-800 bg-slate-800/30", room.presidentId === p.id && "ring-1 ring-cyan-500")}>
+                <li key={p.id} className={cn("flex items-center justify-between p-2", p.id === playerId ? "border border-cyan-500/30 bg-cyan-500/5" : "border border-slate-800 bg-slate-800/30", room.presidentId === p.id && "ring-1 ring-cyan-500")}>
                   <div className="flex items-center gap-3">
                     <img src={p.imageUrl} alt={p.name} className="w-8 h-8 rounded-full border border-slate-700 object-cover" />
                     <div className="flex flex-col">

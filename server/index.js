@@ -2,6 +2,8 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
 
 const app = express();
 app.use(cors());
@@ -14,7 +16,32 @@ const io = new Server(httpServer, {
   }
 });
 
-const rooms = new Map();
+const ROOMS_FILE = path.join(process.cwd(), 'rooms.json');
+
+function loadRooms() {
+  try {
+    if (fs.existsSync(ROOMS_FILE)) {
+      const data = fs.readFileSync(ROOMS_FILE, 'utf8');
+      return new Map(Object.entries(JSON.parse(data)));
+    }
+  } catch (err) {
+    console.error('Error loading rooms:', err);
+  }
+  return new Map();
+}
+
+function saveRooms() {
+  try {
+    const data = JSON.stringify(Object.fromEntries(rooms));
+    fs.writeFileSync(ROOMS_FILE, data, 'utf8');
+  } catch (err) {
+    console.error('Error saving rooms:', err);
+  }
+}
+
+const rooms = loadRooms();
+const playerSockets = new Map(); // playerId -> socket.id
+const socketPlayers = new Map(); // socket.id -> playerId
 
 const MODS = [
   { 
@@ -354,14 +381,21 @@ const FUNNY_PLACEHOLDERS = [
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  socket.on('create_room', ({ playerName, playerImage }) => {
+  socket.on('register_player', ({ playerId }) => {
+    playerSockets.set(playerId, socket.id);
+    socketPlayers.set(socket.id, playerId);
+    console.log(`Player registered: ${playerId} -> ${socket.id}`);
+  });
+
+  socket.on('create_room', ({ playerName, playerImage, playerId }) => {
+    if (!playerId) return socket.emit('error_msg', 'Player ID missing.');
     const roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
     const finalImage = playerImage || FUNNY_PLACEHOLDERS[Math.floor(Math.random() * FUNNY_PLACEHOLDERS.length)];
     const room = {
       roomId,
-      creatorId: socket.id,
+      creatorId: playerId,
       status: 'waiting',
-      players: [{ id: socket.id, name: playerName, imageUrl: finalImage, tags: [], playerResult: null, totalPoints: 0, verified: false }],
+      players: [{ id: playerId, name: playerName, imageUrl: finalImage, tags: [], playerResult: null, totalPoints: 0, verified: false }],
       presidentId: null,
       currentMods: [],
       isDoubleRound: false,
@@ -369,12 +403,14 @@ io.on('connection', (socket) => {
       eventTriggered: false
     };
     rooms.set(roomId, room);
+    saveRooms();
     socket.join(roomId);
     socket.emit('room_created', roomId);
     io.to(roomId).emit('room_update', room);
   });
 
-  socket.on('join_room', ({ roomId, playerName, playerImage }) => {
+  socket.on('join_room', ({ roomId, playerName, playerImage, playerId }) => {
+    if (!playerId) return socket.emit('error_msg', 'Player ID missing.');
     const room = rooms.get(roomId);
     if (!room) {
       return socket.emit('error_msg', 'Sala não encontrada.');
@@ -384,19 +420,35 @@ io.on('connection', (socket) => {
     }
     
     const finalImage = playerImage || FUNNY_PLACEHOLDERS[Math.floor(Math.random() * FUNNY_PLACEHOLDERS.length)];
-    room.players.push({ id: socket.id, name: playerName, imageUrl: finalImage, tags: [], playerResult: null, totalPoints: 0, verified: false });
+    room.players.push({ id: playerId, name: playerName, imageUrl: finalImage, tags: [], playerResult: null, totalPoints: 0, verified: false });
+    saveRooms();
     socket.join(roomId);
     io.to(roomId).emit('room_update', room);
   });
 
+  socket.on('rejoin_room', ({ roomId, playerId }) => {
+    const room = rooms.get(roomId);
+    if (room) {
+      const player = room.players.find(p => p.id === playerId);
+      if (player) {
+        playerSockets.set(playerId, socket.id);
+        socketPlayers.set(socket.id, playerId);
+        socket.join(roomId);
+        console.log(`Player ${playerId} rejoined room ${roomId}`);
+        socket.emit('room_update', room);
+      }
+    }
+  });
+
   socket.on('start_president_spin', ({ roomId }) => {
     const room = rooms.get(roomId);
-    if (room && socket.id === room.creatorId) {
+    const playerId = socketPlayers.get(socket.id);
+    if (room && playerId === room.creatorId) {
       const winner = room.players[Math.floor(Math.random() * room.players.length)];
       room.status = 'spinning_president';
-      // room.presidentId = winner.id; // Removido para manter o suspense na barra lateral
       io.to(roomId).emit('room_update', room);
       io.to(roomId).emit('president_spin_start', { winnerId: winner.id });
+      saveRooms();
     }
   });
 
@@ -414,14 +466,16 @@ io.on('connection', (socket) => {
         room.status = 'spinning_mod_step';
       }
       io.to(roomId).emit('room_update', room);
+      saveRooms();
     }
   });
 
   socket.on('choose_dobra_arrega', ({ roomId, choice }) => {
     const room = rooms.get(roomId);
-    if (room && socket.id === room.presidentId) {
-      console.log(`President ${socket.id} choice in room ${roomId}: ${choice}`);
-      const president = room.players.find(p => p.id === socket.id);
+    const playerId = socketPlayers.get(socket.id);
+    if (room && playerId === room.presidentId) {
+      console.log(`President ${playerId} choice in room ${roomId}: ${choice}`);
+      const president = room.players.find(p => p.id === playerId);
       if (choice === 'dobrar') {
         room.isDoubleRound = true;
         room.nextRoundDouble = true;
@@ -436,17 +490,20 @@ io.on('connection', (socket) => {
         room.status = 'spinning_mod_step';
       }
       io.to(roomId).emit('room_update', room);
+      saveRooms();
     }
   });
 
   socket.on('start_mod_spin', ({ roomId }) => {
     const room = rooms.get(roomId);
-    if (room && socket.id === room.presidentId) {
+    const playerId = socketPlayers.get(socket.id);
+    if (room && playerId === room.presidentId) {
       const numMods = room.isDoubleRound ? 2 : 1;
       const selectedMods = [...MODS].sort(() => 0.5 - Math.random()).slice(0, numMods);
       room.status = 'spinning_mod';
       io.to(roomId).emit('room_update', room);
       io.to(roomId).emit('mod_spin_start', { selectedMods });
+      saveRooms();
     }
   });
 
@@ -456,6 +513,7 @@ io.on('connection', (socket) => {
       room.currentMods = selectedMods;
       room.status = 'players_round';
       io.to(roomId).emit('room_update', room);
+      saveRooms();
     }
   });
 
@@ -463,7 +521,8 @@ io.on('connection', (socket) => {
     const room = rooms.get(roomId);
     if (!room) return;
 
-    const player = room.players.find(p => p.id === socket.id);
+    const playerId = socketPlayers.get(socket.id);
+    const player = room.players.find(p => p.id === playerId);
     if (!player) return;
 
     let result = { mode, points: 0, details: {} };
@@ -500,29 +559,35 @@ io.on('connection', (socket) => {
 
     player.playerResult = result;
     io.to(roomId).emit('room_update', room);
+    saveRooms();
   });
 
   socket.on('finish_players_round', ({ roomId }) => {
     const room = rooms.get(roomId);
-    if (room && socket.id === room.creatorId) {
+    const playerId = socketPlayers.get(socket.id);
+    if (room && playerId === room.creatorId) {
       room.status = 'playing';
       io.to(roomId).emit('room_update', room);
+      saveRooms();
     }
   });
 
   socket.on('reset_match', ({ roomId }) => {
     const room = rooms.get(roomId);
-    if (room && socket.id === room.creatorId) {
+    const playerId = socketPlayers.get(socket.id);
+    if (room && playerId === room.creatorId) {
       room.status = 'verifying';
       room.players.forEach(p => p.verified = false);
       io.to(roomId).emit('room_update', room);
+      saveRooms();
     }
   });
 
   socket.on('verify_result', ({ roomId, success }) => {
     const room = rooms.get(roomId);
     if (!room) return;
-    const player = room.players.find(p => p.id === socket.id);
+    const playerId = socketPlayers.get(socket.id);
+    const player = room.players.find(p => p.id === playerId);
     if (!player || !player.playerResult || player.verified) return;
 
     if (success) {
@@ -532,11 +597,13 @@ io.on('connection', (socket) => {
     }
     player.verified = true;
     io.to(roomId).emit('room_update', room);
+    saveRooms();
   });
 
   socket.on('finish_verification', ({ roomId }) => {
     const room = rooms.get(roomId);
-    if (room && socket.id === room.creatorId) {
+    const playerId = socketPlayers.get(socket.id);
+    if (room && playerId === room.creatorId) {
       room.status = 'waiting';
       room.presidentId = null;
       room.currentMods = [];
@@ -553,6 +620,7 @@ io.on('connection', (socket) => {
       room.nextRoundDouble = false; 
 
       io.to(roomId).emit('room_update', room);
+      saveRooms();
     }
   });
 
@@ -562,18 +630,40 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-    for (const [roomId, room] of rooms.entries()) {
-      const playerIndex = room.players.findIndex(p => p.id === socket.id);
-      if (playerIndex !== -1) {
-        room.players.splice(playerIndex, 1);
-        if (room.players.length === 0) {
-          rooms.delete(roomId);
-        } else {
-          if (room.creatorId === socket.id) {
-            room.creatorId = room.players[0].id;
+    const playerId = socketPlayers.get(socket.id);
+    console.log('User disconnected:', socket.id, 'Player:', playerId);
+    
+    if (playerId) {
+      playerSockets.delete(playerId);
+      socketPlayers.delete(socket.id);
+
+      for (const [roomId, room] of rooms.entries()) {
+        const playerIndex = room.players.findIndex(p => p.id === playerId);
+        if (playerIndex !== -1) {
+          // Se estiver esperando, remove o jogador. Se estiver jogando, mantém.
+          if (room.status === 'waiting') {
+            room.players.splice(playerIndex, 1);
+            if (room.players.length === 0) {
+              rooms.delete(roomId);
+            } else {
+              if (room.creatorId === playerId) {
+                // Transfere liderança para o próximo disponível
+                room.creatorId = room.players[0].id;
+              }
+              io.to(roomId).emit('room_update', room);
+            }
+          } else {
+            // Se o criador desconectar durante o jogo, transfere liderança para alguém online
+            if (room.creatorId === playerId) {
+              const nextOnline = room.players.find(p => playerSockets.has(p.id));
+              if (nextOnline) {
+                room.creatorId = nextOnline.id;
+                console.log(`Leadership transferred from ${playerId} to ${nextOnline.id} in room ${roomId}`);
+                io.to(roomId).emit('room_update', room);
+              }
+            }
           }
-          io.to(roomId).emit('room_update', room);
+          saveRooms();
         }
       }
     }
