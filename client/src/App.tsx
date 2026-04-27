@@ -65,7 +65,7 @@ export default function App() {
     }
     return id;
   });
-  const [playerName, setPlayerName] = useState('');
+  const [playerName, setPlayerName] = useState(() => localStorage.getItem('roleta_player_name') || '');
   const [playerImage, setPlayerImage] = useState('');
   const [joinRoomId, setJoinRoomId] = useState('');
   const [room, setRoom] = useState<RoomState | null>(null);
@@ -89,7 +89,21 @@ export default function App() {
     } else {
       localStorage.removeItem('roleta_room_id');
     }
-  }, [room]);
+
+    // Tentar recuperar o nome do jogador se estiver na sala
+    if (room) {
+      const me = room.players.find(p => p.id === playerId);
+      if (me && !playerName) {
+        setPlayerName(me.name);
+      }
+    }
+  }, [room, playerId]);
+
+  useEffect(() => {
+    if (playerName) {
+      localStorage.setItem('roleta_player_name', playerName);
+    }
+  }, [playerName]);
 
   const submitChoice = () => {
     socket.emit('submit_player_choice', { 
@@ -119,6 +133,13 @@ export default function App() {
       if (savedRoomId) {
         socket.emit('rejoin_room', { roomId: savedRoomId, playerId });
       }
+    });
+
+    socket.on('rejoin_failed', (msg) => {
+      console.warn('Rejoin failed:', msg);
+      localStorage.removeItem('roleta_room_id');
+      setRoomId(null);
+      setRoom(null);
     });
 
     socket.on('room_created', (id) => {

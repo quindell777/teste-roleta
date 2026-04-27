@@ -415,6 +415,17 @@ io.on('connection', (socket) => {
     if (!room) {
       return socket.emit('error_msg', 'Sala não encontrada.');
     }
+
+    // Se o jogador já está na sala, permite re-entrada mesmo se estiver bloqueada
+    const existingPlayer = room.players.find(p => p.id === playerId);
+    if (existingPlayer) {
+      playerSockets.set(playerId, socket.id);
+      socketPlayers.set(socket.id, playerId);
+      socket.join(roomId);
+      console.log(`Player ${playerId} re-joined via join_room for room ${roomId}`);
+      return io.to(roomId).emit('room_update', room);
+    }
+
     if (room.status !== 'waiting') {
       return socket.emit('error_msg', 'Sala bloqueada. A partida já iniciou.');
     }
@@ -436,7 +447,11 @@ io.on('connection', (socket) => {
         socket.join(roomId);
         console.log(`Player ${playerId} rejoined room ${roomId}`);
         socket.emit('room_update', room);
+      } else {
+        socket.emit('rejoin_failed', 'Jogador não encontrado na sala.');
       }
+    } else {
+      socket.emit('rejoin_failed', 'Sala não encontrada.');
     }
   });
 
