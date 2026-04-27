@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
+import bcrypt from 'bcryptjs';
 
 const app = express();
 app.use(cors());
@@ -639,9 +640,16 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('ping_keep_alive', ({ roomId }) => {
-    // Ping recebido para evitar que o servidor entre em suspensão
-    console.log(`Keep-alive ping received for room: ${roomId}`);
+  socket.on('ping_keep_alive', ({ roomId, message }) => {
+    if (message) {
+      // Gerar processamento no servidor para evitar suspensão
+      bcrypt.hash(message, 8, (err, hash) => {
+        if (!err) {
+          socket.emit('ping_response', { success: true });
+          console.log(`Keep-alive processed for room ${roomId} (CPU Task)`);
+        }
+      });
+    }
   });
 
   socket.on('disconnect', () => {

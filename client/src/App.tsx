@@ -215,14 +215,24 @@ export default function App() {
   useEffect(() => {
     let interval: any;
 
+    const generateRandomString = (length: number) => {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      let result = '';
+      for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    };
+
     const amICreator = room && socket && room.creatorId === playerId;
     const shouldPing = room && amICreator && (room.status === 'playing' || room.status === 'players_round');
 
     if (shouldPing) {
-      // Ping a cada 40 segundos para manter o servidor ativo
+      // Ping a cada 40 segundos para manter o servidor ativo com processamento real
       interval = setInterval(() => {
         if (socket && socket.connected) {
-          socket.emit('ping_keep_alive', { roomId: room.roomId });
+          const payload = generateRandomString(64);
+          socket.emit('ping_keep_alive', { roomId: room.roomId, message: payload });
         }
       }, 40000);
     }
