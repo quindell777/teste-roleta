@@ -556,6 +556,11 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('ping_keep_alive', ({ roomId }) => {
+    // Ping recebido para evitar que o servidor entre em suspensão
+    console.log(`Keep-alive ping received for room: ${roomId}`);
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
     for (const [roomId, room] of rooms.entries()) {

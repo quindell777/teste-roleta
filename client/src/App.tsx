@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -165,6 +165,27 @@ export default function App() {
       socket.disconnect();
     };
   }, []);
+
+  // Serviço de Ping para evitar suspensão do servidor (apenas para o criador)
+  useEffect(() => {
+    let interval: any;
+
+    const amICreator = room && socket && room.creatorId === socket.id;
+    const shouldPing = room && amICreator && (room.status === 'playing' || room.status === 'players_round');
+
+    if (shouldPing) {
+      // Ping a cada 40 segundos para manter o servidor ativo
+      interval = setInterval(() => {
+        if (socket && socket.connected) {
+          socket.emit('ping_keep_alive', { roomId: room.roomId });
+        }
+      }, 40000);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [room?.status, room?.creatorId, room?.roomId]);
 
   const createRoom = () => {
     if (!playerName.trim()) return setError('Digite seu nome');
